@@ -295,9 +295,12 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
         <div class="panel-head"><h2 id="form-title">予約する</h2><span class="label" id="edit-badge" hidden>変更中</span></div>
         <form id="form" novalidate>
           <div class="field"><label for="f-name">予約者名<span class="req">必須</span><span class="opt-note">変更可能</span></label><input id="f-name" maxlength="40" required autocomplete="name"><span class="hint-sm" id="me-note">読み込んでいます…</span></div>
-          <div class="field"><label for="f-date">日付<span class="req">必須</span></label><input type="date" id="f-date" required></div>
           <div class="row2">
+            <div class="field"><label for="f-date">開始日<span class="req">必須</span></label><input type="date" id="f-date" required></div>
             <div class="field"><label for="f-start">開始<span class="req">必須</span></label><select id="f-start" required></select></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="f-enddate">終了日<span class="req">必須</span></label><input type="date" id="f-enddate" required></div>
             <div class="field"><label for="f-end">終了<span class="req">必須</span></label><select id="f-end" required></select></div>
           </div>
           <div class="field"><label for="f-purpose">用途<span class="opt">任意</span></label><input id="f-purpose" maxlength="60" placeholder="例：配信、収録、打ち合わせ、作業"></div>
@@ -383,7 +386,8 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
 <script>
 let OPEN = 8, CLOSE = 22, SLOT = 15, ALLOW_OVERLAP = true;
 // ▼ 外部（GitHub Pages など）に置くときだけ：Apps Script の URL（…/exec）を貼り付ける。Apps Script の中で使うときはこのままでよい
-const API_URL = "https://script.google.com/macros/s/AKfycbxhBKezTycUxeSlUuRUI_eh5ictiFyOAx7w3lMmUn8nbgGsN1yhx7AfQd5GoQtRAKjOsg/exec";const HOUR_PX = 48;
+const API_URL = "https://script.google.com/macros/s/AKfycbxhBKezTycUxeSlUuRUI_eh5ictiFyOAx7w3lMmUn8nbgGsN1yhx7AfQd5GoQtRAKjOsg/exec";
+const HOUR_PX = 48;
 const WD = ["日","月","火","水","木","金","土"];
 const $ = id => document.getElementById(id);
 document.documentElement.style.setProperty("--hh", HOUR_PX + "px");
@@ -420,7 +424,7 @@ const BROWSER_KEY = (() => {
     return k;
   }catch(e){ return ""; }
 })();
-let pageUrl = "", loginUrl = "";
+let pageUrl = "", loginUrl = "", googleClientId = "";
 // Google ログイン：ログイン用から戻ったときの通行証（サーバーが埋め込む）と、引き換えた90日有効のログイン
 // Apps Script の中で動いているか（そうでなければ外部に置いたページとして、API_URL に直接問い合わせる）
 const IN_GAS = typeof google !== "undefined" && !!(google.script && google.script.run);
@@ -473,13 +477,31 @@ function toMin(t){ const [h,m] = t.split(":").map(Number); return h*60+m; }
 function fromMin(m){ return pad(Math.floor(m/60))+":"+pad(m%60); }
 function parseYmd(s){ const [y,m,d] = s.split("-").map(Number); return new Date(y,m-1,d); }
 function md(s){ const d = parseYmd(s); return (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）"; }
-function durH(r){ return (toMin(r.end)-toMin(r.start))/60; }
+// ---- 日をまたぐ予約：日付と時刻を「通しの分」にして比べる（endDate が空なら開始と同じ日） ----
+function dayNum(ds){ const [y,m,d] = ds.split("-").map(Number); return Math.round(Date.UTC(y,m-1,d) / 86400000); }
+function absS(r){ return dayNum(r.date)*1440 + toMin(r.start); }
+function absE(r){ return dayNum(r.endDate || r.date)*1440 + toMin(r.end); }
+function nowAbs(){ const n = new Date(); return dayNum(ymd(n))*1440 + n.getHours()*60 + n.getMinutes(); }
+function overlaps(a, b){ return absS(a) < absE(b) && absS(b) < absE(a); }
+function isMulti(r){ return !!r.endDate && r.endDate !== r.date; }
+function shortMd(ds){ const d = parseYmd(ds); return (d.getMonth()+1)+"/"+d.getDate(); }
+/** その日にかかる部分（start/end はその日の中の時刻。cont=前の日から続く、more=次の日へ続く） */
+function segOn(r, ds){
+  const d0 = dayNum(ds)*1440, s0 = Math.max(absS(r), d0), e0 = Math.min(absE(r), d0 + 1440);
+  if(e0 <= s0) return null;
+  return { r, start: fromMin(s0 - d0), end: fromMin(e0 - d0), cont: absS(r) < d0, more: absE(r) > d0 + 1440 };
+}
+function segLabel(g){ return !g.cont && !g.more ? g.start+"–"+g.end : !g.cont ? g.start+"〜" : !g.more ? "〜"+g.end : "終日"; }
+function rangeText(r){ return isMulti(r) ? md(r.date)+" "+r.start+" 〜 "+md(r.endDate)+" "+r.end : md(r.date)+" "+r.start+"–"+r.end; }
+function timeText(r){ return isMulti(r) ? r.start+" 〜 "+shortMd(r.endDate)+" "+r.end : r.start+"–"+r.end; }
+function spanDays(r){ return dayNum(r.endDate || r.date) - dayNum(r.date); }
+function durH(r){ return (absE(r) - absS(r))/60; }
 function fmtH(h){ return (Math.round(h*10)/10).toString(); }
 function isMine(r){ return !!r.mine; }
 
 // 重なっている予約のうち何番目に登録されたか（1 = 先約）。重なりが無ければ 0
 function rankOf(r){
-  const over = rows.filter(x => x !== r && x.date === r.date && toMin(x.start) < toMin(r.end) && toMin(r.start) < toMin(x.end));
+  const over = rows.filter(x => x !== r && overlaps(x, r));
   if(!over.length) return 0;
   return 1 + over.filter(x => x.seq < r.seq).length;
 }
@@ -500,13 +522,24 @@ function fillTimes(){
 }
 fillTimes();
 $("f-date").value = ymd(now);
+$("f-enddate").value = ymd(now);
+// 開始日を変えたら、終了日も同じだけずらす（日をまたぐ長さはそのまま）
+let lastStartDate = $("f-date").value;
+$("f-date").addEventListener("change", () => {
+  const d = $("f-date").value, ed = $("f-enddate").value;
+  if(d && lastStartDate && ed){ const span = dayNum(ed) - dayNum(lastStartDate); $("f-enddate").value = ymd(addDays(parseYmd(d), Math.max(0, span))); }
+  else if(d) $("f-enddate").value = d;
+  lastStartDate = d;
+  checkForm();
+});
 // 繰り返しの選択肢は日付の入力欄が用意できてから作る（下で定義）
 setTimeout(fillRepeat, 0);
 $("f-start").addEventListener("change", () => {
-  if(toMin($("f-end").value) <= toMin($("f-start").value)) $("f-end").value = fromMin(Math.min(toMin($("f-start").value)+60, CLOSE*60));
+  const sameDay = $("f-enddate").value === $("f-date").value;
+  if(sameDay && toMin($("f-end").value) <= toMin($("f-start").value)) $("f-end").value = fromMin(Math.min(toMin($("f-start").value)+60, CLOSE*60));
   checkForm();
 });
-["f-end","f-date"].forEach(id => $(id).addEventListener("input", checkForm));
+["f-end","f-date","f-enddate"].forEach(id => $(id).addEventListener("input", checkForm));
 $("f-date").addEventListener("change", () => fillRepeat());
 
 // ---- 繰り返し（Google カレンダーと同じ選択肢） ----
@@ -622,8 +655,9 @@ function expandRepeat(date, rep){
   return out;
 }
 
-function conflictsWith(date, start, end){
-  return rows.filter(r => r.id !== editing && r.date === date && toMin(r.start) < toMin(end) && toMin(start) < toMin(r.end));
+function conflictsWith(date, start, end, endDate){
+  const probe = { date, start, end, endDate: endDate || date };
+  return rows.filter(r => r.id !== editing && overlaps(r, probe));
 }
 let resultShown = false;   // 予約・変更・取消の結果を表示中（自動更新で消さない）
 function setMsg(text, kind){ const m = $("f-msg"); m.textContent = text; m.className = "msg" + (kind ? " "+kind : ""); }
@@ -632,7 +666,7 @@ $("form").addEventListener("input", () => { resultShown = false; });
 $("form").addEventListener("change", () => { resultShown = false; });
 function checkForm(){
   const btn = $("f-submit");
-  const date = $("f-date").value, s = $("f-start").value, e = $("f-end").value;
+  const date = $("f-date").value, s = $("f-start").value, e = $("f-end").value, endDate = $("f-enddate").value || date;
   const fail = t => { setMsg(t, "err"); btn.disabled = true; return false; };
   if(!loaded){ btn.disabled = true; return false; }
   if(!fresh){ setMsg("最新の予約を確認しています…", ""); btn.disabled = true; return false; }
@@ -640,28 +674,31 @@ function checkForm(){
   if(!$("f-name").value.trim()) return fail("予約者名を入力してください。");
   if(!date) return fail("日付を選んでください。");
   if(date < ymd(new Date())) return fail("過去の日付には予約できません。");
-  if(toMin(e) <= toMin(s)) return fail("終了は開始より後の時刻にしてください。");
+  const me0 = { date, start: s, end: e, endDate };
+  if(absE(me0) <= absS(me0)) return fail("終了は開始より後の日時にしてください（日をまたぐときは終了日を変えてください）。");
+  if(absE(me0) - absS(me0) > 31*1440) return fail("1回の予約は31日までです。");
+  const span = spanDays(me0);
   const rep = repeatSpec();
   if(rep){
     let dates;
     try{ dates = expandRepeat(date, rep); }catch(err){ return fail(err.message); }
     if(!dates.length) return fail("この条件では予約する日がありません。");
-    const hit = dates.filter(d => conflictsWith(d, s, e).length);
+    const hit = dates.filter(d => conflictsWith(d, s, e, ymd(addDays(parseYmd(d), span))).length);
     if(hit.length && !ALLOW_OVERLAP) return fail(hit.length+"回分が他の予約と重なります（例："+md(hit[0])+"）。別の時間を選んでください。");
-    setMsg(repeatLabel()+" "+s+"–"+e+"：" + md(dates[0])+"〜"+md(dates[dates.length-1])+" の計"+dates.length+"回を予約します。" + (hit.length ? "うち"+hit.length+"回は他の予約と重なります（"+md(hit[0])+" など）。" : ""), hit.length ? "warn" : "ok");
+    setMsg(repeatLabel()+" "+timeText(me0)+"：" + md(dates[0])+"〜"+md(dates[dates.length-1])+" の計"+dates.length+"回を予約します。" + (hit.length ? "うち"+hit.length+"回は他の予約と重なります（"+md(hit[0])+" など）。" : ""), hit.length ? "warn" : "ok");
     btn.disabled = false;
     return true;
   }
-  const cs = conflictsWith(date, s, e), len = "（"+fmtH((toMin(e)-toMin(s))/60)+"時間）";
-  if(cs.length && !ALLOW_OVERLAP) return fail(cs[0].start+"–"+cs[0].end+" に "+cs[0].name+" さんの予約があります。別の時間を選んでください。");
+  const cs = conflictsWith(date, s, e, endDate), len = "（"+fmtH(durH(me0))+"時間）";
+  if(cs.length && !ALLOW_OVERLAP) return fail(rangeText(cs[0])+" に "+cs[0].name+" さんの予約があります。別の時間を選んでください。");
   if(cs.length){
     const mySeq = editing ? (rows.find(r => r.id === editing) || {seq: Infinity}).seq : Infinity;
     const before = cs.filter(c => c.seq < mySeq);
-    setMsg(md(date)+" "+s+"–"+e+len+"："+(before.length
-      ? "先に "+before.map(c => c.name+" さん（"+c.start+"–"+c.end+"）").join("、")+" が予約しています。このまま入れると "+(before.length+1)+"番目の予約になります。"
-      : "同じ時間に "+cs.map(c => c.name+" さん（"+c.start+"–"+c.end+"）").join("、")+" の予約がありますが、こちらが先約です。"), "warn");
+    setMsg(rangeText(me0)+len+"："+(before.length
+      ? "先に "+before.map(c => c.name+" さん（"+timeText(c)+"）").join("、")+" が予約しています。このまま入れると "+(before.length+1)+"番目の予約になります。"
+      : "同じ時間に "+cs.map(c => c.name+" さん（"+timeText(c)+"）").join("、")+" の予約がありますが、こちらが先約です。"), "warn");
   }
-  else setMsg(md(date)+" "+s+"–"+e+len+" は空いています。", "ok");
+  else setMsg(rangeText(me0)+len+" は空いています。", "ok");
   btn.disabled = false;
   return true;
 }
@@ -679,7 +716,7 @@ $("form").addEventListener("submit", async ev => {
   ev.preventDefault();
   if(!checkForm()) return;
   const data = {
-    name: $("f-name").value.trim(), date: $("f-date").value, start: $("f-start").value, end: $("f-end").value,
+    name: $("f-name").value.trim(), date: $("f-date").value, endDate: $("f-enddate").value || $("f-date").value, start: $("f-start").value, end: $("f-end").value,
     purpose: $("f-purpose").value.trim(), participants: $("f-participants").value.trim(), repeat: repeatSpec()
   };
   const wasEditing = editing, scope = editing && $("scope-following").checked ? "following" : "one";
@@ -692,12 +729,14 @@ $("form").addEventListener("submit", async ev => {
     const r = rows.find(x => x.id === wasEditing);
     const targets = scope === "following" && r.series ? rows.filter(x => x.series === r.series && x.date >= r.date) : [r];
     const before = targets.map(cloneRow);
-    targets.forEach(x => Object.assign(x, fields, targets.length > 1 ? {} : { date: data.date }, { pending: true }));
+    const span = spanDays(data);
+    targets.forEach(x => Object.assign(x, fields, targets.length > 1 ? { endDate: ymd(addDays(parseYmd(x.date), span)) } : { date: data.date, endDate: data.endDate }, { pending: true }));
     undo = () => { before.forEach(o => { const x = rows.find(y => y.id === o.id); if(x) Object.assign(x, o, { pending: false }); }); };
   }else{
     const dates = data.repeat ? expandRepeat(data.date, data.repeat) : [data.date];
     const stamp = Date.now();
-    const temp = dates.map((d, i) => Object.assign({ id: "tmp-"+stamp+"-"+i, date: d, mine: true, created: "", seq: 1e12 + i, series: dates.length > 1 ? "tmp-"+stamp : "", pending: true }, fields));
+    const span = spanDays(data);
+    const temp = dates.map((d, i) => Object.assign({ id: "tmp-"+stamp+"-"+i, date: d, endDate: ymd(addDays(parseYmd(d), span)), mine: true, created: "", seq: 1e12 + i, series: dates.length > 1 ? "tmp-"+stamp : "", pending: true }, fields));
     rows = rows.concat(temp);
     selected = temp[0].id;
     undo = () => { rows = rows.filter(x => !temp.includes(x)); };
@@ -717,10 +756,10 @@ $("form").addEventListener("submit", async ev => {
     rows = res.rows; selected = res.id;
     setSaving(false); render();
     const done = wasEditing ? "変更しました：" : "予約しました：";
-    const cal = calendarOn && !res.warning ? "（Google カレンダーには1分ほどで反映されます）" : "";
+    const cal = "";
     const what = res.count > 1
-      ? (wasEditing ? "これ以降の "+res.count+" 件を "+data.start+"–"+data.end+" に" : label+" "+data.start+"–"+data.end+" を "+res.count+" 回分")
-      : md(data.date)+" "+data.start+"–"+data.end;
+      ? (wasEditing ? "これ以降の "+res.count+" 件を "+timeText(data)+" に" : label+" "+timeText(data)+" を "+res.count+" 回分")
+      : rangeText(data);
     showResult(done+what+cal+(res.warning ? " "+res.warning : ""), res.warning ? "err" : "ok");
   }catch(e){
     undo();
@@ -740,7 +779,7 @@ async function cancelBooking(r, scope){
     const res = await call("cancel", r.id, scope);
     rows = res.rows;
     setSaving(false); render();
-    showResult((res.count > 1 ? md(r.date)+" 以降の "+res.count+" 件" : md(r.date)+" "+r.start+"–"+r.end+" の予約")+"を取り消しました。"+(res.warning ? " "+res.warning : ""), res.warning ? "err" : "ok");
+    showResult((res.count > 1 ? md(r.date)+" 以降の "+res.count+" 件" : rangeText(r)+" の予約")+"を取り消しました。"+(res.warning ? " "+res.warning : ""), res.warning ? "err" : "ok");
   }catch(e){
     rows = rows.concat(removed);
     setSaving(false); render();
@@ -752,13 +791,13 @@ async function cancelBooking(r, scope){
 // 予約の中身（詳細画面とマウスを重ねたときのカードで共通）
 function rowFacts(r){
   const facts = [
-    ["日時", md(r.date)+" "+r.start+"–"+r.end+"（"+fmtH(durH(r))+"時間）"],
+    ["日時", rangeText(r)+"（"+fmtH(durH(r))+"時間）"],
     ["用途", r.purpose || "未記入"],
     ["参加者", r.participants || "未記入"],
   ];
   if(rankOf(r)){
-    const others = rows.filter(x => x !== r && x.date === r.date && toMin(x.start) < toMin(r.end) && toMin(r.start) < toMin(x.end));
-    facts.push(["重なり", others.map(x => x.name+"（"+x.start+"–"+x.end+"）").join("、")]);
+    const others = rows.filter(x => x !== r && overlaps(x, r));
+    facts.push(["重なり", others.map(x => x.name+"（"+timeText(x)+"）").join("、")]);
   }
   if(r.created) facts.push(["登録日時", r.created.replace(/-/g, "/")]);
   return facts;
@@ -855,6 +894,8 @@ function startEdit(r){
   $("f-name").value = r.name;
   $("me-note").textContent = "予約者名を変えると、台帳とカレンダーの表示も変わります。";
   $("f-date").value = r.date;
+  $("f-enddate").value = r.endDate || r.date;
+  lastStartDate = r.date;
   $("f-start").value = r.start;
   $("f-end").value = r.end;
   $("f-purpose").value = r.purpose || "";
@@ -888,7 +929,7 @@ document.querySelectorAll('input[name="scope"]').forEach(x => x.addEventListener
   // 「これ以降すべて」は各回の日付はそのままで、予約者名・時刻・用途・参加者だけを変える
   const following = $("scope-following").checked;
   const r = rows.find(x => x.id === editing);
-  if(following && r) $("f-date").value = r.date;
+  if(following && r){ $("f-date").value = r.date; lastStartDate = r.date; }
   $("f-date").disabled = following;
   checkForm();
 }));
@@ -929,26 +970,15 @@ function scrollToNow(){
 // 予約者名：最初は Google アカウントの名前（前回手で変えた名前があればそれ）。自由に書き換えられる
 let nameTouched = false;
 $("f-name").addEventListener("input", () => { nameTouched = true; checkForm(); });
+
 function paintMe(reset){
   if(reset) nameTouched = false;
   const note = $("me-note"); note.replaceChildren();
-  const link = (text, href) => { const a = document.createElement("a"); a.href = href; a.target = "_top"; a.textContent = text; return a; };
   if(me && me.loggedIn){
-    note.append((isAdmin ? "管理者・" : "") + "Google アカウント（" + me.email + "）で利用中。どの端末からでも自分の予約を変更・取消できます。");
-    if(SESSION){
-      // このブラウザに保存したログイン（90日）を消す
-      note.append(" ");
-      const out = document.createElement("a"); out.href = "#"; out.textContent = "ログアウト";
-      out.addEventListener("click", ev => { ev.preventDefault(); saveSession(""); paintMe(true); refresh(); });
-      note.appendChild(out);
-    }
+    // ログインなし版：管理者が Google にログインした状態で Apps Script の URL を開いたときだけ、ここに来る
+    note.append((isAdmin ? "管理者（" : "Google アカウント（") + me.email + "）として表示中。");
   }else{
     note.append("変更・取消は、このブラウザからできます。");
-    if(loginUrl){
-      note.append(" ");
-      note.appendChild(link("Google でログイン", loginUrl));
-      note.append("すると、名前が自動で入り、どの端末からでも変更できます（このブラウザでは90日間ログインしたまま）。");
-    }
     if(!BROWSER_KEY) note.append("（このブラウザは保存機能が無効なため、あとから変更・取消できません）");
   }
   if(!nameTouched){
@@ -963,19 +993,20 @@ function renderStatus(){
   now = new Date();
   $("clock").textContent = ymd(now).replace(/-/g,"/")+"（"+WD[now.getDay()]+"） "+hm(now);
   if(!loaded) return;
-  const today = ymd(now), t = hm(now);
-  const todays = rows.filter(r => r.date === today).sort((a,b) => a.start.localeCompare(b.start));
-  const curs = todays.filter(r => r.start <= t && t < r.end);
+  const today = ymd(now), t = hm(now), na = nowAbs();
+  const todays = rows.filter(r => segOn(r, today)).sort((a,b) => absS(a) - absS(b));
+  const curs = todays.filter(r => absS(r) <= na && na < absE(r));
   const cur = curs[0];
-  const next = todays.find(r => r.start > t);
+  const next = todays.find(r => absS(r) > na);
+  const until = r => (isMulti(r) && (r.endDate || r.date) !== today ? shortMd(r.endDate)+" " : "") + r.end;
   const pill = $("st-pill");
   if(curs.length > 1){
     pill.className = "pill busy"; pill.textContent = "使用中";
     $("st-title").textContent = curs.length+"件の予約が利用中：" + curs.map(r => r.name+" さん").join("、");
-    $("st-sub").textContent = curs.map(r => r.name+" 〜"+r.end+(r.purpose ? "（"+r.purpose+"）" : "")).join(" ・ ") + (next ? " ／ 次の予約 "+next.start+"〜" : "");
+    $("st-sub").textContent = curs.map(r => r.name+" 〜"+until(r)+(r.purpose ? "（"+r.purpose+"）" : "")).join(" ・ ") + (next ? " ／ 次の予約 "+next.start+"〜" : "");
   }else if(cur){
     pill.className = "pill busy"; pill.textContent = "使用中";
-    $("st-title").textContent = cur.name+" さんが利用中（"+cur.end+" まで）";
+    $("st-title").textContent = cur.name+" さんが利用中（"+until(cur)+" まで）";
     $("st-sub").textContent = [cur.purpose, cur.participants ? "参加者："+cur.participants : ""].filter(Boolean).join(" ・ ") + (next ? " ／ 次の予約 "+next.start+"〜" : "");
   }else{
     pill.className = "pill free"; pill.textContent = "空き";
@@ -986,8 +1017,8 @@ function renderStatus(){
   const strip = $("st-strip"); strip.replaceChildren();
   for(const r of todays){
     const c = document.createElement("span");
-    c.className = "chip" + (r.end <= t ? " past" : "");
-    c.textContent = r.start+"–"+r.end;
+    c.className = "chip" + (absE(r) <= na ? " past" : "");
+    c.textContent = segLabel(segOn(r, today));
     strip.appendChild(c);
   }
 }
@@ -1019,14 +1050,14 @@ function renderMonth(){
     const d = addDays(start, i), ds = ymd(d);
     const cell = document.createElement("div"); cell.tabIndex = 0; cell.setAttribute("role", "button");
     cell.className = "mo-cell" + (d.getMonth()!==m ? " out" : "") + (ds===todayS ? " today" : "") + (d.getDay()===0 ? " sun" : d.getDay()===6 ? " sat" : "");
-    const list = rows.filter(r => r.date === ds).sort((a,b) => a.start.localeCompare(b.start));
+    const list = rows.filter(r => segOn(r, ds)).sort((a,b) => absS(a) - absS(b));
     cell.setAttribute("aria-label", (d.getMonth()+1)+"月"+d.getDate()+"日 予約"+list.length+"件");
     const dn = document.createElement("span"); dn.className = "mo-d"; dn.textContent = d.getDate();
     cell.appendChild(dn);
     for(const r of list.slice(0,3)){
       const ev = document.createElement("button"); ev.type = "button"; ev.className = "mo-ev" + (isMine(r) ? " mine" : "");
       ev.addEventListener("click", e => { e.stopPropagation(); openDetail(r); });
-      const tm = document.createElement("span"); tm.className = "tm"; tm.textContent = r.start+"–"+r.end;
+      const tm = document.createElement("span"); tm.className = "tm"; tm.textContent = segLabel(segOn(r, ds));
       ev.append(tm, r.name);
       attachHover(ev, r);
       cell.appendChild(ev);
@@ -1089,19 +1120,20 @@ function renderTimeline(startDate, nDays){
         ac.abort(); ghost.remove();
         if(!moved){ s = a; e = Math.min(a + 60, CLOSE*60); }
         if($("f-date").disabled) return;   // 「これ以降すべて」の変更中は日付を動かさない
-        $("f-date").value = ds; $("f-start").value = fromMin(s); $("f-end").value = fromMin(e);
+        $("f-date").value = ds; $("f-enddate").value = ds; lastStartDate = ds; $("f-start").value = fromMin(s); $("f-end").value = fromMin(e);
         fillRepeat(); checkForm();
         $("f-purpose").focus({preventScroll: window.innerWidth > 960});
       }, {signal: ac.signal});
       col.addEventListener("pointercancel", () => { ac.abort(); ghost.remove(); }, {signal: ac.signal});
     });
-    for(const [r, lane, lanes] of layoutDay(rows.filter(r => r.date === ds))){
+    for(const [g, lane, lanes] of layoutDay(rows.map(r => segOn(r, ds)).filter(Boolean))){
+      const r = g.r;   // g はその日にかかる部分（日をまたぐ予約は日ごとに分けて描く）
       const b = document.createElement("button");
       b.type = "button";
       const rk = rankOf(r);
       b.className = "blk" + (isMine(r) ? " mine" : "") + (r.id===selected ? " sel" : "") + (rk > 1 ? " later" : "") + (r.pending ? " pending" : "");
-      const top = Math.max(0, (toMin(r.start)-OPEN*60)/60*HOUR_PX);
-      const bottom = Math.min(totalPx, (toMin(r.end)-OPEN*60)/60*HOUR_PX);
+      const top = Math.max(0, (toMin(g.start)-OPEN*60)/60*HOUR_PX);
+      const bottom = Math.min(totalPx, (toMin(g.end)-OPEN*60)/60*HOUR_PX);
       b.style.top = top+"px"; b.style.height = Math.max(bottom-top-2, 10)+"px";
       if(lanes > 1){
         b.style.right = "auto";
@@ -1110,7 +1142,7 @@ function renderTimeline(startDate, nDays){
         b.style.paddingInline = "4px";
       }
       if(bottom-top < 28) b.classList.add("short");
-      const t = document.createElement("span"); t.className = "t"; t.textContent = b.classList.contains("short") ? r.start : r.start+"–"+r.end;
+      const t = document.createElement("span"); t.className = "t"; t.textContent = b.classList.contains("short") && !g.cont ? g.start : segLabel(g);
       const n = document.createElement("span"); n.className = "n"; n.textContent = r.name;
       if(rk){ const k = document.createElement("span"); k.className = "rk"; k.textContent = rk === 1 ? "先" : rk; n.prepend(k); }
       b.append(t, n);
@@ -1166,7 +1198,8 @@ function renderList(){
   const today = ymd(new Date()), t = hm(new Date());
   // 管理者は全員分、それ以外は自分の予約だけを並べる（他の人の予約はタイムラインで見られる）
   $("up-title").textContent = isAdmin ? "これからの予約（全員）" : "自分のこれからの予約";
-  const up = rows.filter(r => (isAdmin || isMine(r)) && (r.date > today || (r.date === today && r.end > t)))
+  const na = nowAbs();
+  const up = rows.filter(r => (isAdmin || isMine(r)) && absE(r) > na)
     .sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start));
   $("up-count").textContent = up.length ? up.length+" 件" : "";
   if(!up.length){
@@ -1180,7 +1213,7 @@ function renderList(){
     if(r.id === selected) li.className = "sel";
     const w = document.createElement("div"); w.className = "when";
     const b = document.createElement("b"); b.textContent = md(r.date);
-    w.append(b, r.start+"–"+r.end);
+    w.append(b, timeText(r));
     const who = document.createElement("div"); who.className = "who";
     const s = document.createElement("strong"); s.textContent = r.name;
     const rk = rankOf(r);
@@ -1232,11 +1265,16 @@ function renderUsage(){
   const isThis = y === new Date().getFullYear() && m === new Date().getMonth();
   $("u-title").textContent = y+"年"+(m+1)+"月の使用状況" + (isThis ? "（今月）" : "");
   const prefix = y+"-"+pad(m+1)+"-";
-  const list = rows.filter(r => r.date.startsWith(prefix));
-  const hours = list.reduce((s,r) => s+durH(r), 0);
+  const list = rows.filter(r => r.date.startsWith(prefix));   // 件数は開始日の月で数える
   const days = new Date(y, m+1, 0).getDate();
-  const byDate = {};
-  for(const r of list) (byDate[r.date] = byDate[r.date] || []).push(r);
+  // 時間は、その月の各日にかかる部分だけを足す（日をまたぐ予約は日ごとに分ける）
+  const byDate = {}, segs = [];
+  for(let dd = 1; dd <= days; dd++){
+    const ds = prefix + pad(dd);
+    for(const r of rows){ const g = segOn(r, ds); if(g){ segs.push({ g, ds }); (byDate[ds] = byDate[ds] || []).push(g); } }
+  }
+  const segH = x => (toMin(x.g.end) - toMin(x.g.start))/60;
+  const hours = segs.reduce((s,x) => s+segH(x), 0);
   const occupied = Object.values(byDate).reduce((s,l) => s+occupiedHours(l), 0);
   const rate = occupied / (days*(CLOSE-OPEN)) * 100;
   $("k-count").innerHTML = list.length+"<small>件</small>";
@@ -1245,7 +1283,7 @@ function renderUsage(){
   $("k-meter").style.width = Math.min(rate,100)+"%";
 
   const byP = {};
-  for(const r of list) byP[r.name] = (byP[r.name]||0) + durH(r);
+  for(const x of segs) byP[x.g.r.name] = (byP[x.g.r.name]||0) + segH(x);
   const ent = Object.entries(byP).sort((a,b) => b[1]-a[1]).slice(0,6);
   const max = ent.length ? ent[0][1] : 1;
   const bp = $("by-person"); bp.replaceChildren();
@@ -1260,7 +1298,7 @@ function renderUsage(){
   }
 
   const byW = [0,0,0,0,0,0,0];
-  for(const r of list) byW[parseYmd(r.date).getDay()] += durH(r);
+  for(const x of segs) byW[parseYmd(x.ds).getDay()] += segH(x);
   const wmax = Math.max(...byW, 1);
   const wk = $("by-wday"); wk.replaceChildren();
   for(const i of [1,2,3,4,5,6,0]){
@@ -1281,6 +1319,7 @@ function applyData(d, isFresh){
   rows = d.rows; isAdmin = d.isAdmin; calendarOn = d.config.calendar; me = d.me;
   if(isFresh && SESSION && !(me && me.loggedIn)) saveSession("");   // 期限切れのログインは消す
   pageUrl = d.config.pageUrl || "";
+  googleClientId = d.config.googleClientId || "";
   // 会社の Workspace の URL（…/a/macros/会社のドメイン/s/…）はそのドメインのログインを求めるので、誰でも開ける形に直す
   loginUrl = (d.config.loginUrl || "").replace(/\/a\/macros\/[^\/]+\/s\//, "/macros/s/");
   if(!editing) paintMe();
@@ -1288,7 +1327,7 @@ function applyData(d, isFresh){
     OPEN = d.config.openHour; CLOSE = d.config.closeHour; SLOT = d.config.slotMinutes || 15; ALLOW_OVERLAP = d.config.allowOverlap !== false;
     $("title").textContent = d.config.title;
     document.title = d.config.title;
-    $("hours-note").textContent = (OPEN === 0 && CLOSE === 24 ? "24時間" : "利用時間 "+OPEN+":00–"+CLOSE+":00") + " ・ "+SLOT+"分単位で予約できます" + (calendarOn ? " ・ 予約は Google カレンダーにも登録されます" : "");
+    $("hours-note").textContent = (OPEN === 0 && CLOSE === 24 ? "24時間" : "利用時間 "+OPEN+":00–"+CLOSE+":00") + " ・ "+SLOT+"分単位で予約できます ・ 日をまたぐ予約もできます";
     $("rate-note").textContent = "利用時間は予約ごとの合計です。稼働率は予約が入っている時間（重なりは1回だけ数える）を、1日"+(CLOSE-OPEN)+"時間（"+OPEN+":00–"+CLOSE+":00）× その月の日数で割っています。";
     fillTimes();
   }
