@@ -3,6 +3,9 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
+<!-- 外部（GitHub Pages など）に置いたとき、スマホでスマホ用の表示にするための設定（Apps Script の中では同じものが自動で付く） -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gamchew事務所利用予約</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: status band on top, week timeline as the main surface, booking form + list beside it, monthly usage below */
@@ -380,8 +383,7 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
 <script>
 let OPEN = 8, CLOSE = 22, SLOT = 15, ALLOW_OVERLAP = true;
 // ▼ 外部（GitHub Pages など）に置くときだけ：Apps Script の URL（…/exec）を貼り付ける。Apps Script の中で使うときはこのままでよい
-const API_URL = "https://script.google.com/macros/s/AKfycbxhBKezTycUxeSlUuRUI_eh5ictiFyOAx7w3lMmUn8nbgGsN1yhx7AfQd5GoQtRAKjOsg/exec";
-const HOUR_PX = 48;
+const API_URL = "https://script.google.com/macros/s/AKfycbxhBKezTycUxeSlUuRUI_eh5ictiFyOAx7w3lMmUn8nbgGsN1yhx7AfQd5GoQtRAKjOsg/exec";const HOUR_PX = 48;
 const WD = ["日","月","火","水","木","金","土"];
 const $ = id => document.getElementById(id);
 document.documentElement.style.setProperty("--hh", HOUR_PX + "px");
