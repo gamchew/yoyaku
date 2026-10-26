@@ -380,7 +380,7 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
 <script>
 let OPEN = 8, CLOSE = 22, SLOT = 15, ALLOW_OVERLAP = true;
 // ▼ 外部（GitHub Pages など）に置くときだけ：Apps Script の URL（…/exec）を貼り付ける。Apps Script の中で使うときはこのままでよい
-const API_URL = "https://script.google.com/a/gamchew.com/macros/s/AKfycbz9ZiBDL_W1H33qIwaqQ4Av1NkUbmoYrDgR0PNoJrI058oJ3Asz/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxhBKezTycUxeSlUuRUI_eh5ictiFyOAx7w3lMmUn8nbgGsN1yhx7AfQd5GoQtRAKjOsg/exec";
 const HOUR_PX = 48;
 const WD = ["日","月","火","水","木","金","土"];
 const $ = id => document.getElementById(id);
@@ -440,12 +440,18 @@ function call(fn, ...args){
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(fn, args, BROWSER_KEY, SESSION);
     });
   }
-  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(API_URL)) return Promise.reject(new Error("API_URL が設定されていません（index.html の先頭に Apps Script の URL を貼り付けてください）"));
-  return fetch(API_URL, {
+  // 会社の Google Workspace の URL（…/a/macros/会社のドメイン/s/…）はログインを求められるので、誰でも開ける形（…/macros/s/…）に直す
+  const url = String(API_URL).trim().replace(/\/a\/macros\/[^\/]+\/s\//, "/macros/s/");
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec$/.test(url)) return Promise.reject(new Error("API_URL が正しくありません（index.html の API_URL に、Apps Script の …/exec で終わる URL を貼り付けてください）"));
+  return fetch(url, {
     method: "POST", credentials: "omit", redirect: "follow",
     headers: {"Content-Type": "text/plain;charset=utf-8"},   // text/plain にすると事前確認（CORS のプリフライト）が要らない
     body: JSON.stringify({action: fn, args: args, browserKey: BROWSER_KEY, session: SESSION})
-  }).then(r => r.text(), () => { throw new Error("通信できませんでした。電波の状態を確かめて、もう一度お試しください。"); })
+  }).then(r => r.text(), () => {
+      throw new Error(navigator.onLine === false
+        ? "インターネットにつながっていません。電波の状態を確かめて、もう一度お試しください。"
+        : "Apps Script から予約データを受け取れませんでした。台帳側のデプロイが「実行：自分」「アクセス：全員」で、最新のコードを新バージョンでデプロイしているか確認してください（シークレットウィンドウで API_URL を開いて、ログインなしで表示されれば OK です）。");
+    })
     .then(t => {
       let o;
       try{ o = JSON.parse(t); }catch(e){ throw new Error("予約台帳に接続できませんでした。API_URL と、Apps Script の公開設定（実行：自分・アクセス：全員）を確認してください。"); }
