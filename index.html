@@ -1280,7 +1280,9 @@ function applyData(d, isFresh){
   if(isFresh){ fresh = true; $("notice").hidden = true; }
   rows = d.rows; isAdmin = d.isAdmin; calendarOn = d.config.calendar; me = d.me;
   if(isFresh && SESSION && !(me && me.loggedIn)) saveSession("");   // 期限切れのログインは消す
-  pageUrl = d.config.pageUrl || ""; loginUrl = d.config.loginUrl || "";
+  pageUrl = d.config.pageUrl || "";
+  // 会社の Workspace の URL（…/a/macros/会社のドメイン/s/…）はそのドメインのログインを求めるので、誰でも開ける形に直す
+  loginUrl = (d.config.loginUrl || "").replace(/\/a\/macros\/[^\/]+\/s\//, "/macros/s/");
   if(!editing) paintMe();
   if(first){
     OPEN = d.config.openHour; CLOSE = d.config.closeHour; SLOT = d.config.slotMinutes || 15; ALLOW_OVERLAP = d.config.allowOverlap !== false;
