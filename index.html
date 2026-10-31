@@ -123,6 +123,20 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 
 form{display:grid;gap:12px}
+.check{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted);margin-top:-4px;cursor:pointer}
+.check input{width:auto;min-height:0}
+.more{display:grid;gap:12px}
+.more[open]{display:grid}
+.more summary{cursor:pointer;font-size:.82rem;color:var(--accent);font-weight:500;list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more summary::before{content:"＋ "}
+.more[open] summary::before{content:"− "}
+.more[open]>.field,.more[open]>.rep-box{margin-top:12px}
+.usage-panel>summary{list-style:none;cursor:pointer}
+.usage-panel>summary::-webkit-details-marker{display:none}
+.usage-panel>summary h2::after{content:" ＋";color:var(--muted);font-weight:400}
+.usage-panel[open]>summary h2::after{content:" −"}
+.usage-panel:not([open])>summary .panel-head{margin-bottom:0}
 .field{display:grid;gap:4px}
 .field label{font-size:.8rem;color:var(--muted);font-weight:500}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -151,8 +165,13 @@ input,select{font:inherit;font-size:.92rem;padding:8px 10px;border:1px solid var
 .scope label{display:flex;gap:6px;align-items:center}
 .scope input{width:auto}
 .rank.rep{background:var(--mine-soft);color:var(--mine)}
-.nl-box{display:grid;gap:8px;padding:12px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);margin-bottom:14px}
-.nl-box label{font-size:.8rem;font-weight:700;color:var(--accent)}
+.nl-box{display:grid;gap:10px;padding:16px 18px;border:1px solid var(--accent);border-radius:var(--r);background:var(--accent-soft)}
+.nl-box>label{font-size:.95rem;font-weight:700;color:var(--accent)}
+.nl-row input{font-size:1rem;padding:10px 12px}
+.nl-name{display:grid;gap:4px;max-width:320px}
+.nl-name label{font-size:.8rem;color:var(--muted);font-weight:500}
+.nl-name input{background:var(--surface)}
+.nl-msg .btn.primary{width:auto;min-width:220px}
 .nl-row{display:flex;gap:8px}
 .nl-row input{flex:1;background:var(--surface)}
 .nl-row .btn{white-space:nowrap;font-weight:700}
@@ -252,7 +271,6 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
 <div class="wrap">
   <header>
     <div>
-      <div class="label">OFFICE BOOKING</div>
       <h1 id="title">Gamchew事務所利用予約</h1>
       <p id="hours-note"></p>
     </div>
@@ -263,6 +281,14 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
   </header>
 
   <div class="notice" id="notice" hidden></div>
+
+  <section class="nl-box" id="nl-box">
+    <label for="nl-text">文言で予約</label>
+    <div class="nl-row"><input id="nl-text" autocomplete="off" placeholder="例：明日14時から2時間 収録"><button type="button" class="btn mic" id="nl-mic" aria-label="声で入力" title="声で入力" hidden>🎤</button><button type="button" class="btn" id="nl-go">読み取る</button></div>
+    <div class="nl-name" id="nl-name-row" hidden><label for="nl-name">予約者名<span class="req">必須</span></label><input id="nl-name" maxlength="40" autocomplete="name"></div>
+    <p class="nl-msg" id="nl-msg">例：「来週月曜10時〜12時 山田さんと打ち合わせ」</p>
+  </section>
+
 
   <section class="status" aria-live="polite">
     <span class="pill free" id="st-pill">確認中</span>
@@ -296,8 +322,6 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
       <div class="legend">
         <span><i style="background:var(--accent)"></i>予約あり</span>
         <span><i style="background:var(--mine)"></i>自分の予約</span>
-        <span>重なった予約は登録順に「先約」「2番目」…と表示</span>
-        <span><i style="background:var(--busy)"></i>現在時刻</span>
         <span id="legend-tip">空いている枠をクリックすると予約フォームに反映されます</span>
       </div>
     </section>
@@ -305,11 +329,6 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
     <div class="side">
       <section class="panel" id="form-panel">
         <div class="panel-head"><h2 id="form-title">予約する</h2><span class="label" id="edit-badge" hidden>変更中</span></div>
-        <div class="nl-box" id="nl-box">
-          <label for="nl-text">文言で予約</label>
-          <div class="nl-row"><input id="nl-text" autocomplete="off" placeholder="例：明日14時から2時間 収録"><button type="button" class="btn mic" id="nl-mic" aria-label="声で入力" title="声で入力" hidden>🎤</button><button type="button" class="btn" id="nl-go">読み取る</button></div>
-          <p class="nl-msg" id="nl-msg">日にち・時間・用途を書くと、下のフォームに入ります。例：「来週月曜10時〜12時 山田さんと打ち合わせ」「11/5 22時から翌2時 夜間配信」</p>
-        </div>
         <form id="form" novalidate>
           <div class="field"><label for="f-name">予約者名<span class="req">必須</span><span class="opt-note">変更可能</span></label><input id="f-name" maxlength="40" required autocomplete="name"><span class="hint-sm" id="me-note">読み込んでいます…</span></div>
           <div class="row2">
@@ -317,10 +336,13 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
             <div class="field"><label for="f-start">開始<span class="req">必須</span></label><select id="f-start" required></select></div>
           </div>
           <div class="row2">
-            <div class="field"><label for="f-enddate">終了日<span class="req">必須</span></label><input type="date" id="f-enddate" required></div>
+            <div class="field" id="enddate-field" hidden><label for="f-enddate">終了日<span class="req">必須</span></label><input type="date" id="f-enddate" required></div>
             <div class="field"><label for="f-end">終了<span class="req">必須</span></label><select id="f-end" required></select></div>
           </div>
+          <label class="check"><input type="checkbox" id="f-overnight"> 日をまたぐ</label>
           <div class="field"><label for="f-purpose">用途<span class="opt">任意</span></label><input id="f-purpose" maxlength="60" placeholder="例：配信、収録、打ち合わせ、作業"></div>
+          <details class="more" id="more">
+          <summary>参加者・繰り返し</summary>
           <div class="field"><label for="f-participants">参加者<span class="opt">任意</span></label><input id="f-participants" maxlength="200" placeholder="例：山田、佐藤、〇〇様（社外）" autocomplete="off"></div>
           <div class="field" id="repeat-field"><label for="f-repeat">繰り返し<span class="opt">任意</span></label><select id="f-repeat"></select></div>
           <div class="rep-box" id="rep-box" hidden>
@@ -336,6 +358,7 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
               <input type="number" id="f-count" min="1" max="100" value="10" aria-label="回数" hidden><span id="count-unit" hidden>回</span>
             </div>
           </div>
+          </details>
           <div class="field" id="scope-field" hidden>
             <label>繰り返し予約の変更</label>
             <div class="scope">
@@ -356,14 +379,14 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
     </div>
   </div>
 
-  <section class="panel">
-    <div class="panel-head">
+  <details class="panel usage-panel">
+    <summary><div class="panel-head">
       <h2 id="u-title">今月の使用状況</h2>
       <div class="nav">
         <button class="btn" id="mprev" aria-label="前の月">‹</button>
         <button class="btn" id="mnext" aria-label="次の月">›</button>
       </div>
-    </div>
+    </div></summary>
     <div class="usage">
       <div>
         <div class="kpis">
@@ -383,7 +406,7 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
         <div class="wk" id="by-wday"></div>
       </div>
     </div>
-  </section>
+  </details>
 </div>
 
 <div class="hovercard" id="hovercard" role="tooltip" hidden></div>
@@ -419,8 +442,8 @@ let view = "week";
 try{ const v = localStorage.getItem("ob-view"); if(["day","week","month"].includes(v)) view = v; else if(window.innerWidth < 720) view = "day"; }catch(e){ if(window.innerWidth < 720) view = "day"; }
 // スマホの下のボタン：予約フォームと予約状況へすぐ移動する
 document.getElementById("mb-book").addEventListener("click", () => {
-  document.getElementById("form-panel").scrollIntoView({behavior: "smooth", block: "start"});
-  setTimeout(() => { const n = document.getElementById("f-name"); (n.value.trim() ? document.getElementById("f-date") : n).focus({preventScroll: true}); }, 400);
+  document.getElementById("nl-box").scrollIntoView({behavior: "smooth", block: "start"});
+  setTimeout(() => document.getElementById("nl-text").focus({preventScroll: true}), 400);
 });
 document.getElementById("mb-status").addEventListener("click", () => document.getElementById("timeline-panel").scrollIntoView({behavior: "smooth", block: "start"}));
 let monthCursor = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -557,6 +580,12 @@ $("f-start").addEventListener("change", () => {
   checkForm();
 });
 ["f-end","f-date","f-enddate"].forEach(id => $(id).addEventListener("input", checkForm));
+$("f-overnight").addEventListener("change", () => {
+  if(!$("f-overnight").checked) $("f-enddate").value = $("f-date").value;   // 日をまたがない → 終了日を開始日にそろえる
+  else if($("f-enddate").value === $("f-date").value) $("f-enddate").value = ymd(addDays(parseYmd($("f-date").value), 1));
+  lastStartDate = $("f-date").value;
+  checkForm();
+});
 $("f-date").addEventListener("change", () => fillRepeat());
 
 // ---- 繰り返し（Google カレンダーと同じ選択肢） ----
@@ -799,16 +828,29 @@ function readBookingText(){
   const p = parseBookingText(text, new Date());
   if(!p){ msg.className = "nl-msg err"; msg.textContent = "時間を読み取れませんでした。「14時から」「10時〜12時」「午前中」「終日」のように時間を入れてください。"; return; }
   const ok = applyParsed(p);
+  const needName = !$("f-name").value.trim();
   const probe = { date: p.date, endDate: p.endDate, start: p.start, end: p.end };
-  msg.className = "nl-msg " + (ok ? "ok" : "err");
-  msg.append(rangeText(probe) + (p.purpose ? "「" + p.purpose + "」" : "") + (p.participants ? "（参加者：" + p.participants + "）" : "") + (p.repeat ? "・" + repeatLabel() : "") + " として入力しました。" + (ok ? "" : "下のメッセージを確認してください。"));
-  if(ok){
+  msg.className = "nl-msg " + (ok || needName ? "ok" : "err");
+  msg.append(rangeText(probe) + (p.purpose ? "「" + p.purpose + "」" : "") + (p.participants ? "（参加者：" + p.participants + "）" : "") + (p.repeat ? "・" + repeatLabel() : "") + " として入力しました。" + (ok || needName ? "" : "下のメッセージを確認してください。"));
+  $("nl-name-row").hidden = !needName;
+  if(needName){ msg.className = "nl-msg ok"; msg.append(" 予約者名を入れてください。"); $("nl-name").focus(); }
+  if(ok || needName){
     const go = document.createElement("button"); go.type = "button"; go.className = "btn primary"; go.textContent = "このまま予約する";
-    go.addEventListener("click", () => { $("form").requestSubmit(); $("nl-text").value = ""; msg.replaceChildren(); msg.className = "nl-msg"; msg.textContent = "予約しています…"; });
+    go.addEventListener("click", () => {
+      if(!$("f-name").value.trim()){ $("nl-name").focus(); return; }
+      if(!checkForm()){ $("form-panel").scrollIntoView({behavior: "smooth", block: "start"}); return; }
+      nlPending = true;
+      $("form").requestSubmit(); $("nl-text").value = ""; $("nl-name-row").hidden = true;
+      msg.replaceChildren(); msg.className = "nl-msg"; msg.textContent = "予約しています…";
+    });
     msg.appendChild(document.createElement("br")); msg.appendChild(go);
   }
 }
 $("nl-go").addEventListener("click", readBookingText);
+// 上の欄の予約者名は、フォームの予約者名と同じもの
+let nlPending = false;
+$("nl-name").addEventListener("input", () => { $("f-name").value = $("nl-name").value; nameTouched = true; checkForm(); });
+$("f-name").addEventListener("input", () => { $("nl-name").value = $("f-name").value; });
 
 // 声で入力（ブラウザの音声認識。Chrome や iPhone の Safari で使える。使えないブラウザではボタンを出さない）
 (function setupVoice(){
@@ -853,10 +895,20 @@ function conflictsWith(date, start, end, endDate){
 }
 let resultShown = false;   // 予約・変更・取消の結果を表示中（自動更新で消さない）
 function setMsg(text, kind){ const m = $("f-msg"); m.textContent = text; m.className = "msg" + (kind ? " "+kind : ""); }
-function showResult(text, kind){ setMsg(text, kind); resultShown = true; }
+function showResult(text, kind){
+  setMsg(text, kind); resultShown = true;
+  if(nlPending){ const m = $("nl-msg"); m.className = "nl-msg" + (kind === "ok" ? " ok" : kind === "err" ? " err" : ""); m.textContent = text; if(kind) nlPending = false; }
+}
 $("form").addEventListener("input", () => { resultShown = false; });
 $("form").addEventListener("change", () => { resultShown = false; });
+function syncFormParts(){
+  const over = $("f-enddate").value && $("f-enddate").value !== $("f-date").value;
+  if(over) $("f-overnight").checked = true;
+  $("enddate-field").hidden = !$("f-overnight").checked;
+  if(($("f-participants").value.trim() || $("f-repeat").value || !$("scope-field").hidden) && !$("more").open) $("more").open = true;
+}
 function checkForm(){
+  syncFormParts();
   const btn = $("f-submit");
   const date = $("f-date").value, s = $("f-start").value, e = $("f-end").value, endDate = $("f-enddate").value || date;
   const fail = t => { setMsg(t, "err"); btn.disabled = true; return false; };
@@ -1519,7 +1571,7 @@ function applyData(d, isFresh){
     OPEN = d.config.openHour; CLOSE = d.config.closeHour; SLOT = d.config.slotMinutes || 15; ALLOW_OVERLAP = d.config.allowOverlap !== false;
     $("title").textContent = d.config.title;
     document.title = d.config.title;
-    $("hours-note").textContent = (OPEN === 0 && CLOSE === 24 ? "24時間" : "利用時間 "+OPEN+":00–"+CLOSE+":00") + " ・ "+SLOT+"分単位で予約できます ・ 日をまたぐ予約もできます";
+    $("hours-note").textContent = (OPEN === 0 && CLOSE === 24 ? "24時間" : "利用時間 "+OPEN+":00–"+CLOSE+":00") + " ・ "+SLOT+"分単位";
     $("rate-note").textContent = "利用時間は予約ごとの合計です。稼働率は予約が入っている時間（重なりは1回だけ数える）を、1日"+(CLOSE-OPEN)+"時間（"+OPEN+":00–"+CLOSE+":00）× その月の日数で割っています。";
     fillTimes();
   }
