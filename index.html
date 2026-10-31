@@ -151,6 +151,18 @@ input,select{font:inherit;font-size:.92rem;padding:8px 10px;border:1px solid var
 .scope label{display:flex;gap:6px;align-items:center}
 .scope input{width:auto}
 .rank.rep{background:var(--mine-soft);color:var(--mine)}
+.nl-box{display:grid;gap:8px;padding:12px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);margin-bottom:14px}
+.nl-box label{font-size:.8rem;font-weight:700;color:var(--accent)}
+.nl-row{display:flex;gap:8px}
+.nl-row input{flex:1;background:var(--surface)}
+.nl-row .btn{white-space:nowrap;font-weight:700}
+.nl-row .btn.mic{font-size:1.05rem;padding-inline:10px}
+.nl-row .btn.mic.listening{background:var(--busy);border-color:var(--busy);color:var(--surface);animation:mic-pulse 1.2s ease-in-out infinite}
+@keyframes mic-pulse{50%{opacity:.6}}
+@media (prefers-reduced-motion:reduce){.nl-row .btn.mic.listening{animation:none}}
+.nl-msg{font-size:.8rem;line-height:1.55;color:var(--muted);margin:0}
+.nl-msg.ok{color:var(--ink)} .nl-msg.err{color:var(--busy)}
+.nl-msg .btn{margin-top:6px;display:inline-block}
 .me-line{font-size:.88rem;padding:8px 10px;border-radius:6px;background:var(--bg);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .me-line span{color:var(--muted);font-size:.8rem}
 .hint-sm{font-size:.76rem;color:var(--muted)}
@@ -293,6 +305,11 @@ dialog#detail::backdrop{background:rgba(20,28,26,.38)}
     <div class="side">
       <section class="panel" id="form-panel">
         <div class="panel-head"><h2 id="form-title">予約する</h2><span class="label" id="edit-badge" hidden>変更中</span></div>
+        <div class="nl-box" id="nl-box">
+          <label for="nl-text">文言で予約</label>
+          <div class="nl-row"><input id="nl-text" autocomplete="off" placeholder="例：明日14時から2時間 収録"><button type="button" class="btn mic" id="nl-mic" aria-label="声で入力" title="声で入力" hidden>🎤</button><button type="button" class="btn" id="nl-go">読み取る</button></div>
+          <p class="nl-msg" id="nl-msg">日にち・時間・用途を書くと、下のフォームに入ります。例：「来週月曜10時〜12時 山田さんと打ち合わせ」「11/5 22時から翌2時 夜間配信」</p>
+        </div>
         <form id="form" novalidate>
           <div class="field"><label for="f-name">予約者名<span class="req">必須</span><span class="opt-note">変更可能</span></label><input id="f-name" maxlength="40" required autocomplete="name"><span class="hint-sm" id="me-note">読み込んでいます…</span></div>
           <div class="row2">
@@ -654,6 +671,181 @@ function expandRepeat(date, rep){
   }
   return out;
 }
+
+// ---- 文言で予約：「明日14時から2時間 収録」のような文を読み取り、フォームに入れる ----
+function z2h(t){
+  return String(t).replace(/[０-９Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/：/g, ":").replace(/／/g, "/").replace(/[～〜~]/g, "〜").replace(/[－―‐−]/g, "-").replace(/　/g, " ");
+}
+const WD_IDX = { "日": 0, "月": 1, "火": 2, "水": 3, "木": 4, "金": 5, "土": 6 };
+/** 文を読み取って { date, endDate, start, end, purpose, participants, repeat } を返す。時間が読めなければ null。 */
+function parseBookingText(text, base){
+  let t = " " + z2h(text) + " ";
+  const today = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  const found = [];   // { kind, index, ... } 文の中の位置つきで集める
+  const cut = (re, fn) => {   // 見つけた部分は空白に置き換え、ほかの規則に二重に拾われないようにする
+    t = t.replace(re, (...m) => { const idx = m[m.length - 2]; const r = fn(m, idx); if(r) found.push(Object.assign({ index: idx }, r)); return " ".repeat(m[0].length); });
+  };
+  const stripped = [];
+  // 繰り返し
+  let repeat = "";
+  cut(/毎週|隔週|毎日|平日|毎月/g, m => { repeat = { "毎週": "weekly", "隔週": "biweekly", "毎日": "daily", "平日": "weekdays", "毎月": "monthly-nth" }[m[0]]; return null; });
+  // 長さ（「2時間」「1時間半」「90分」）は「2時」と取り違えないよう先に読む
+  let dur = 0;
+  cut(/(\d+(?:\.\d+)?)時間(半)?|(\d+)分間?/g, m => { dur = m[1] ? Math.round(parseFloat(m[1]) * 60) + (m[2] ? 30 : 0) : parseInt(m[3], 10); return null; });
+  // 終日・時間帯だけの指定
+  let allDay = false, band = null;
+  cut(/終日|一日中|丸一日|1日中/g, () => { allDay = true; return null; });
+  // 日付
+  const ymdOf = d => ymd(d);
+  cut(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})日?/g, m => ({ kind: "date", v: ymdOf(new Date(+m[1], m[2] - 1, +m[3])) }));
+  cut(/(\d{1,2})[\/月](\d{1,2})日?/g, m => {
+    let d = new Date(today.getFullYear(), m[1] - 1, +m[2]);
+    if(d < today) d = new Date(today.getFullYear() + 1, m[1] - 1, +m[2]);   // もう過ぎた日付なら来年
+    return { kind: "date", v: ymdOf(d) };
+  });
+  cut(/明後日|あさって/g, () => ({ kind: "date", v: ymdOf(addDays(today, 2)) }));
+  cut(/今日|本日|きょう/g, () => ({ kind: "date", v: ymdOf(today) }));
+  cut(/明日|あした|あす/g, () => ({ kind: "date", v: ymdOf(addDays(today, 1)) }));
+  cut(/(今週|来週|再来週)の?([日月火水木金土])(?:曜日?)?|([日月火水木金土])曜日?/g, m => {
+    const wd = WD_IDX[m[2] || m[3]];
+    if(m[1]){   // 週は月曜はじまり
+      const mon = mondayOf(today), weeks = { "今週": 0, "来週": 1, "再来週": 2 }[m[1]];
+      return { kind: "date", v: ymdOf(addDays(mon, weeks * 7 + (wd + 6) % 7)) };
+    }
+    return { kind: "date", v: ymdOf(addDays(today, (wd - today.getDay() + 7) % 7)) };   // 今日以降でいちばん近いその曜日
+  });
+  cut(/(\d{1,2})日(?!間)/g, m => {
+    let d = new Date(today.getFullYear(), today.getMonth(), +m[1]);
+    if(d < today) d = new Date(today.getFullYear(), today.getMonth() + 1, +m[1]);
+    return { kind: "date", v: ymdOf(d) };
+  });
+  cut(/翌日|次の日|翌/g, () => ({ kind: "next" }));
+  // 時刻
+  cut(/正午/g, () => ({ kind: "time", h: 12, mi: 0, period: "abs" }));
+  cut(/(午前|午後|朝|昼|夕方|夜中|深夜|夜)?\s*(\d{1,2})(?::(\d{2})|時(?:(半)|(\d{1,2})分)?)/g, (m, idx) => ({
+    kind: "time", h: +m[2], mi: m[3] ? +m[3] : m[4] ? 30 : m[5] ? +m[5] : 0, period: m[1] || "",
+    index: idx + m[0].search(/\d/)   // 前の空白ではなく数字の位置を記録する（日付や「翌」との前後を正しく比べるため）
+  }));
+  cut(/午前中/g, () => { band = ["09:00", "12:00"]; return null; });
+  cut(/午後いっぱい|午後/g, () => { if(!band) band = ["13:00", "18:00"]; return null; });
+  // 参加者「〇〇さん」（日付と時刻を外したあとで読むので、時刻を名前と取り違えない）
+  const people = [];
+  cut(/([^\s、,。とにでのをはがら0-9:〜\-]{1,12}?)(さん|様|さま|くん|ちゃん)(と|、|,)?/g, m => { people.push(m[1] + (m[2] === "様" || m[2] === "さま" ? "様" : "")); return null; });
+
+  found.sort((a, b) => a.index - b.index);
+  const dates = found.filter(x => x.kind === "date"), times = found.filter(x => x.kind === "time");
+  let date = dates.length ? dates[0].v : ymd(today);
+  const adj = (x, isEnd, startMin) => {
+    let h = x.h;
+    if(x.period === "午後" || x.period === "夕方" || x.period === "夜") { if(h < 12) h += 12; }
+    else if(x.period === "昼") { if(h < 6) h += 12; }
+    else if(!x.period){
+      if(!isEnd && h >= 1 && h <= 6) h += 12;   // 「2時から」は昼の2時とみなす
+      if(isEnd && h < 12 && h * 60 + x.mi <= startMin && startMin < 18 * 60 && (h + 12) * 60 + x.mi > startMin) h += 12;   // 「10時から2時」→ 14時まで
+    }
+    return Math.min(h, 24) * 60 + x.mi;
+  };
+  let s, e, endDate = date;
+  if(allDay){ s = OPEN * 60; e = CLOSE * 60; }
+  else if(times.length){
+    s = adj(times[0], false, 0);
+    if(times.length > 1){
+      e = adj(times[1], true, s);
+      // 終了の前に別の日付や「翌」があれば、そこで終わる
+      const between = found.filter(x => x.index > times[0].index && x.index < times[1].index);
+      const d2 = between.find(x => x.kind === "date"), nx = between.find(x => x.kind === "next");
+      if(d2) endDate = d2.v; else if(nx) endDate = ymd(addDays(parseYmd(date), 1));
+      else if(e <= s) endDate = ymd(addDays(parseYmd(date), 1));   // 「22時から2時」は翌日の2時まで
+    }else{
+      const total = s + (dur || 60);
+      e = total % 1440; endDate = ymd(addDays(parseYmd(date), Math.floor(total / 1440)));
+      if(e === 0 && total >= 1440){ e = 1440; endDate = ymd(addDays(parseYmd(date), Math.floor(total / 1440) - 1)); }
+    }
+  }else if(band){ s = toMin(band[0]); e = toMin(band[1]); }
+  else return null;
+  // 予約の単位（15分など）にそろえる：開始は切り下げ、終了は切り上げ
+  s = Math.floor(s / SLOT) * SLOT; e = Math.min(1440, Math.ceil(e / SLOT) * SLOT);
+  // 残りの文字を用途にする（助詞や「したい」などは外す）
+  const purpose = t.split(/\s+/).map(w => w
+      .replace(/^(?:から|まで|〜|-|に|で|の|を|は|が|と|、|,|。)+/, "")
+      .replace(/(?:から|まで|〜|-|に|で|の|を|は|が|と|、|,|。|予約|したい|します|して|したいです|お願いします|お願い|ください|ほしい|欲しい|入れて|押さえて|押さえたい|抑えて|抑えたい|使いたい|使います|です|ます)+$/, ""))
+    .filter(w => w && !/^(?:予約|事務所|部屋|お願いします|お願い|したい|入れて|押さえて|抑えて)$/.test(w)).join(" ").trim().slice(0, 60);
+  return { date, endDate, start: fromMin(s), end: fromMin(e), purpose, participants: people.join("、"), repeat };
+}
+
+function applyParsed(p){
+  if(editing) endEdit();
+  const setSel = (id, v) => { const el = $(id); if([...el.options].some(o => o.value === v)) el.value = v; };
+  $("f-date").value = p.date; $("f-enddate").value = p.endDate; lastStartDate = p.date;
+  setSel("f-start", p.start); setSel("f-end", p.end);
+  if(p.purpose) $("f-purpose").value = p.purpose;
+  if(p.participants) $("f-participants").value = p.participants;
+  fillRepeat();
+  if(p.repeat === "biweekly"){   // 隔週は「カスタム：2週間ごと」
+    $("f-repeat").value = "custom"; $("c-freq").value = "weekly"; $("c-interval").value = "2";
+    [...$("c-days").children].forEach(b => b.setAttribute("aria-pressed", "false"));
+  }else $("f-repeat").value = p.repeat || "";
+  $("f-repeat").dispatchEvent(new Event("change"));
+  focusDate = parseYmd(p.date);
+  renderWeek();
+  return checkForm();
+}
+
+function readBookingText(){
+  const text = $("nl-text").value.trim(), msg = $("nl-msg");
+  msg.replaceChildren(); msg.className = "nl-msg";
+  if(!text){ msg.textContent = "予約したい日にち・時間・用途を書いてください。例：「明日14時から2時間 収録」"; return; }
+  const p = parseBookingText(text, new Date());
+  if(!p){ msg.className = "nl-msg err"; msg.textContent = "時間を読み取れませんでした。「14時から」「10時〜12時」「午前中」「終日」のように時間を入れてください。"; return; }
+  const ok = applyParsed(p);
+  const probe = { date: p.date, endDate: p.endDate, start: p.start, end: p.end };
+  msg.className = "nl-msg " + (ok ? "ok" : "err");
+  msg.append(rangeText(probe) + (p.purpose ? "「" + p.purpose + "」" : "") + (p.participants ? "（参加者：" + p.participants + "）" : "") + (p.repeat ? "・" + repeatLabel() : "") + " として入力しました。" + (ok ? "" : "下のメッセージを確認してください。"));
+  if(ok){
+    const go = document.createElement("button"); go.type = "button"; go.className = "btn primary"; go.textContent = "このまま予約する";
+    go.addEventListener("click", () => { $("form").requestSubmit(); $("nl-text").value = ""; msg.replaceChildren(); msg.className = "nl-msg"; msg.textContent = "予約しています…"; });
+    msg.appendChild(document.createElement("br")); msg.appendChild(go);
+  }
+}
+$("nl-go").addEventListener("click", readBookingText);
+
+// 声で入力（ブラウザの音声認識。Chrome や iPhone の Safari で使える。使えないブラウザではボタンを出さない）
+(function setupVoice(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return;
+  const mic = $("nl-mic"); mic.hidden = false;
+  let rec = null;
+  mic.addEventListener("click", () => {
+    if(rec){ rec.stop(); return; }   // 聞き取り中にもう一度押すと止める
+    rec = new SR();
+    rec.lang = "ja-JP"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    const msg = $("nl-msg");
+    mic.classList.add("listening"); mic.setAttribute("aria-label", "聞き取りを止める");
+    msg.className = "nl-msg"; msg.textContent = "聞き取っています…「明日14時から2時間 収録」のように話してください。";
+    let finalText = "";
+    rec.onresult = ev => {
+      let interim = "";
+      for(let i = ev.resultIndex; i < ev.results.length; i++){
+        if(ev.results[i].isFinal) finalText += ev.results[i][0].transcript; else interim += ev.results[i][0].transcript;
+      }
+      $("nl-text").value = finalText + interim;
+    };
+    rec.onerror = ev => {
+      msg.className = "nl-msg err";
+      msg.textContent = ev.error === "not-allowed" || ev.error === "service-not-allowed"
+        ? "マイクの使用が許可されていません。ブラウザの設定でこのページのマイクを許可してください。"
+        : ev.error === "no-speech" ? "声が聞き取れませんでした。もう一度🎤を押して話してください。" : "音声入力を使えませんでした（" + ev.error + "）。文字で入力してください。";
+    };
+    rec.onend = () => {
+      mic.classList.remove("listening"); mic.setAttribute("aria-label", "声で入力");
+      rec = null;
+      if($("nl-text").value.trim() && !$("nl-msg").classList.contains("err")) readBookingText();   // 話し終わったら自動で読み取る
+    };
+    try{ rec.start(); }catch(e){ rec = null; mic.classList.remove("listening"); }
+  });
+})();
+$("nl-text").addEventListener("keydown", e => { if(e.key === "Enter" && !e.isComposing){ e.preventDefault(); readBookingText(); } });
 
 function conflictsWith(date, start, end, endDate){
   const probe = { date, start, end, endDate: endDate || date };
